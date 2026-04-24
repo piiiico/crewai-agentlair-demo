@@ -61,21 +61,19 @@ Attach this to any CrewAI `Agent` and it can send real email. No SMTP. No config
 Agents often need to handle API keys and secrets. AgentLair Vault stores them encrypted with client-side encryption — AgentLair sees only the ciphertext:
 
 ```python
-import base64, hashlib, secrets
+import os, base64, hashlib
+from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
-def encrypt_secret(plaintext: str, seed: bytes, key_name: str) -> str:
-    """Simple client-side encryption (use AES-GCM in production)."""
-    dk = hashlib.sha256(seed + key_name.encode()).digest()
-    nonce = secrets.token_bytes(16)
-    keystream = hashlib.sha256(dk + nonce).digest()
-    ciphertext = bytes(a ^ b for a, b in zip(plaintext.encode(), keystream * 4))
-    return base64.b64encode(nonce + ciphertext).decode()
+# Derive a 32-byte key from the seed + key name
+dk = hashlib.sha256(vault_seed + b"openai-key").digest()
+aesgcm = AESGCM(dk)
+nonce = os.urandom(12)                          # 96-bit nonce, unique per encryption
+ciphertext = aesgcm.encrypt(nonce, b"sk-openai-abc123", None)
+encoded = base64.b64encode(nonce + ciphertext).decode()
 
-# Store
-ciphertext = encrypt_secret("sk-openai-abc123", vault_seed, "openai-key")
 requests.put("https://agentlair.dev/v1/vault/openai-key",
     headers={"Authorization": f"Bearer {api_key}"},
-    json={"ciphertext": ciphertext})
+    json={"ciphertext": encoded})
 ```
 
 The vault key persists across sessions. Your agent can retrieve its own credentials on startup.
