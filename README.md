@@ -1,65 +1,69 @@
-# CrewAI + AgentLair: Identity for Your AI Agents
+# CrewAI + AgentLair: Persistent Identity for AI Agents
 
-Give your CrewAI agents a **persistent identity** — a real email address, AES-256-GCM encrypted credential vault, and behavioral trust score — in one API call.
+Give your CrewAI agents a **persistent identity** — a real email address, encrypted credential vault, and behavioral trust score — in under 5 minutes.
 
-```
-curl -X POST https://agentlair.dev/v1/auth/agent-register \
-  -H "Content-Type: application/json" \
-  -d '{"name":"my-crewai-agent"}'
-
-# Returns: API key + @agentlair.dev email + trust score. Free.
-```
-
-## What this demo shows
-
-| Capability | What you get |
-|------------|-------------|
-| **Persistent identity** | A real `@agentlair.dev` email address that survives session restarts |
-| **Agent email** | Send real emails directly from your CrewAI agent — no SMTP |
-| **Encrypted vault** | Store secrets with client-side AES-256-GCM (cryptography package) |
-| **Trust score** | Behavioral trust score computed from what your agent does |
-
-## Why it matters
-
-CrewAI agents are stateless between runs. AgentLair gives them a **persistent, verifiable identity** that works across any framework or platform:
-
-- External systems can reach your agent at its email address
-- Credentials survive container restarts
-- Every action contributes to a trust score that proves your agent is safe
+Each agent gets:
+- A real `@agentlair.dev` email address (no SMTP setup)
+- AES-256-GCM encrypted credential vault
+- Behavioral trust score (OWASP ASI03/ASI07 compliant)
 
 ## Quick start
 
-### 1. Install dependencies
-
+**Install:**
 ```bash
-pip install -r requirements.txt
+pip install crewai requests python-dotenv cryptography
 ```
 
-### 2. Configure
-
+**Register your agent (one API call):**
 ```bash
-cp .env.example .env
-# Edit .env — or let the script register a new agent automatically
+curl -X POST https://agentlair.dev/v1/auth/agent-register \
+  -H "Content-Type: application/json" \
+  -d '{"name":"my-crewai-agent"}'
+# Returns: api_key + @agentlair.dev email + account_id. Free.
 ```
 
-### 3a. Test integrations (no LLM key needed)
-
+**Run the demo:**
 ```bash
-python demo.py --test
+git clone https://github.com/piiiico/crewai-agentlair-demo
+cd crewai-agentlair-demo
+python demo.py --test     # verifies all integrations, no LLM key needed
+python demo.py            # full crew (requires OPENAI_API_KEY)
 ```
 
-This verifies all AgentLair integrations (register, trust score, vault, email, CrewAI tool wiring) without needing an LLM API key.
+The `--test` mode registers a fresh agent, verifies vault encrypt/decrypt, sends a real email, and wires the CrewAI tools — all without an LLM key.
 
-### 3b. Run the full LLM-orchestrated demo
+## What the demo shows
 
-```bash
-export OPENAI_API_KEY=sk-...   # or configure another provider in .env
-python demo.py
+| Capability | Details |
+|------------|---------|
+| **Persistent identity** | `@agentlair.dev` email survives container restarts |
+| **Agent email** | Send real emails directly from your agent — no SMTP |
+| **Encrypted vault** | Client-side AES-256-GCM; server never sees plaintext |
+| **Trust score** | Behavioral score computed from what your agent does |
+| **Trust gating** | Check score before allowing high-stakes actions |
+
+## Why this matters
+
+CrewAI agents are stateless between runs. AgentLair gives them a **persistent, verifiable identity** that works across any framework or platform:
+
+- External systems can reach your agent at a stable email address
+- Credentials survive container/session restarts — stored encrypted in the vault
+- Every action contributes to a trust score that proves your agent is safe (OWASP ASI03)
+- Cross-crew handoff attestation: receiving agents can verify the delegating agent's identity (OWASP ASI07)
+
+## Architecture
+
 ```
+CrewAI Agent
+    │
+    ├── send_email tool     → AgentLair /v1/email/send
+    ├── store_secret tool   → AES-256-GCM (client) → AgentLair /v1/vault/{key}
+    └── get_trust_score tool → AgentLair /v1/trust/score
+```
+
+AAT (Agent Authentication Token) is a short-lived EdDSA JWT (1h TTL) issued per session. Verifiers fetch the JWKS at `https://agentlair.dev/.well-known/jwks.json`.
 
 ## Verified output
-
-Running `python demo.py --test` against the live AgentLair API:
 
 ```
 === AgentLair Integration Test ===
@@ -67,10 +71,8 @@ Running `python demo.py --test` against the live AgentLair API:
 [1/5] Registering agent...
   ⟳ Registering new AgentLair agent: 'crewai-demo-test'
   ✓ Registered!
-    Email:   crewai-demo-test-8429@agentlair.dev
-    Account: acc_MGZeQHzprGscGj8U
-  Email:   crewai-demo-test-8429@agentlair.dev
-  Account: acc_MGZeQHzprGscGj8U
+    Email:   crewai-demo-test-6576@agentlair.dev
+    Account: acc_pGR5KN5BNUAiQ6JL
 
 [2/5] Checking trust score...
   ✓ Score: 30/100  Level: intern  Trend: stable
@@ -80,68 +82,39 @@ Running `python demo.py --test` against the live AgentLair API:
   ✓ Retrieved: 'demo-openai-key-sk-test-1234567890' [✓ MATCH]
 
 [4/5] Sending email (agent → own address)...
-  ✓ Sent id=out_BbDbBHWnhqCy7YQ4  status=sent
+  ✓ Sent id=out_Yz63XROTZXM8X9aP  status=sent
 
 [5/5] Wiring CrewAI tools and verifying each...
   ✓ Tools registered: ['send_email', 'store_secret', 'get_trust_score']
-  ✓ send_email → Email sent (id=out_zCHfT6BNL79CvCm3, status=sent)
+  ✓ send_email → Email sent (id=out_PL3qafQNc4AIDUdT, status=sent)
   ✓ store_secret → Secret stored at vault key 'crewai-test-key'
   ✓ get_trust_score → Trust score: 30/100 (level: intern)
-
   ✓ CrewAI agents initialized: Research Agent, Report Agent
   ✓ Each agent has 3 AgentLair tools attached
 
 === All 5 integration checks passed ===
-   Email:      crewai-demo-test-8429@agentlair.dev
+   Email:      crewai-demo-test-6576@agentlair.dev
    Trust:      30/100 (intern)
    Vault:      AES-256-GCM round-trip verified
-   CrewAI:     v1.14.2 — agents + tools wired
+   CrewAI:     v1.14.3 — agents + tools wired
 ```
 
-## API reference
+## Configuration
 
-All calls use raw HTTP (no SDK required):
+The demo auto-registers a new agent on first run and saves credentials to `.agentlair-credentials.json`. For production, use environment variables:
 
-```python
-import requests, os, base64, hashlib
-from cryptography.hazmat.primitives.ciphers.aead import AESGCM
-
-BASE_URL = "https://agentlair.dev"
-
-# Register an agent
-response = requests.post(f"{BASE_URL}/v1/auth/agent-register",
-    json={"name": "my-agent"})
-creds = response.json()
-# creds["api_key"], creds["email_address"], creds["account_id"]
-
-# Send email
-requests.post(f"{BASE_URL}/v1/email/send",
-    headers={"Authorization": f"Bearer {api_key}"},
-    json={
-        "from": email_address,
-        "to": "recipient@example.com",
-        "subject": "Hello from my agent",
-        "text": "Agent-authored message"
-    })
-
-# Store in vault (AES-256-GCM client-side encryption)
-dk = hashlib.sha256(seed + b"my-key").digest()
-aesgcm = AESGCM(dk)
-nonce = os.urandom(12)
-ciphertext = aesgcm.encrypt(nonce, plaintext.encode(), None)
-requests.put(f"{BASE_URL}/v1/vault/my-key",
-    headers={"Authorization": f"Bearer {api_key}"},
-    json={"ciphertext": base64.b64encode(nonce + ciphertext).decode()})
-
-# Get trust score
-requests.get(f"{BASE_URL}/v1/trust/score?agent_id={account_id}",
-    headers={"Authorization": f"Bearer {api_key}"})
+```bash
+AGENTLAIR_API_KEY=...
+AGENTLAIR_EMAIL=my-agent@agentlair.dev
+AGENTLAIR_ACCOUNT_ID=acc_...
+AGENTLAIR_VAULT_SEED=...   # 32-byte hex; keep this safe
 ```
 
 ## Related
 
 - [AgentLair docs](https://agentlair.dev/getting-started)
 - [AgentLair MCP server](https://agentlair.dev/mcp)
+- [OWASP Agentic AI Top 10](https://owasp.org/www-project-top-10-for-large-language-model-applications/)
 
 ## License
 
